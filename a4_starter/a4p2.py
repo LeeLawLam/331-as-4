@@ -36,6 +36,9 @@ February 2025
 Author: <<Insert your name here>>
 """
 
+import random
+
+
 LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
@@ -47,7 +50,70 @@ def translateMessage(key: str, message: str, codebook: dict, mode: str):
     specifying the action to be taken. Returns a string containing the
     ciphertext (if encrypting) or plaintext (if decrypting).
     """
-    raise NotImplementedError()
+    if mode not in ("encrypt", "decrypt"):
+        raise ValueError("mode must be 'encrypt' or 'decrypt'")
+
+    if mode == "encrypt":
+        charsA = LETTERS
+        charsB = key
+    else:
+        charsA = key
+        charsB = LETTERS
+
+    codebook_lc = {}
+    for w, syms in codebook.items():
+        codebook_lc[w.lower()] = syms
+
+    # Reverse map for decrypt: symbol -> original codebook word
+    sym_to_word = {}
+    for w, syms in codebook.items():
+        for s in syms:
+            sym_to_word[s] = w
+
+    out_tokens = []
+    tokens = message.split(" ")
+
+    for tok in tokens:
+        if tok == "":
+            out_tokens.append("")
+            continue
+
+        left = 0
+        right = len(tok)
+
+        while left < right and not tok[left].isalpha() and not tok[left].isdigit():
+            left += 1
+        while right > left and not tok[right - 1].isalpha() and not tok[right - 1].isdigit():
+            right -= 1
+
+        prefix = tok[:left]
+        core = tok[left:right]
+        suffix = tok[right:]
+
+        # Decide if core is a "dictionary word" for codebook matching
+        if mode == "encrypt":
+            if core.isalpha() and core.lower() in codebook_lc:
+                sym = random.choice(codebook_lc[core.lower()])
+                out_tokens.append(prefix + sym + suffix)
+                continue
+        else:  # decrypt
+            if core.isdigit() and core in sym_to_word:
+                word = sym_to_word[core]
+                out_tokens.append(prefix + word + suffix)
+                continue
+
+        translated = []
+        for ch in tok:
+            up = ch.upper()
+            if up in charsA:
+                idx = charsA.find(up)
+                sub = charsB[idx]
+                translated.append(sub if ch.isupper() else sub.lower())
+            else:
+                translated.append(ch)
+        out_tokens.append("".join(translated))
+
+    return " ".join(out_tokens)
 
 
 def encryptMessage(key: str, message: str, codebook: dict):

@@ -47,7 +47,127 @@ def hackSimpleSub(message: str):
     First runs the textbook program to get an initial, potentially incomplete decipherment.
     Then uses regular expressions and a dictionary to decipher additional letters.
     """
-    raise NotImplementedError()
+    # Get initial mapping from textbook hacker
+    letterMapping = ssh.hackSimpleSub(message)
+
+    # Initial partial decrypt (unknown show up as '_')
+    plaintext = ssh.decryptWithCipherletterMapping(message, letterMapping)
+
+    # Load dictionary (uppercase)
+    with open("dictionary.txt", "r", encoding="utf-8") as f:
+        dict_words = [w.strip().upper() for w in f.read().splitlines() if w.strip()]
+
+    # Stop when no changes are made in a full pass
+    changed = True
+    while changed:
+        changed = False
+
+        # Recompute plaintext each round from current mapping
+        plaintext = ssh.decryptWithCipherletterMapping(message, letterMapping)
+
+        cipher_words = re.findall(r"[A-Z]+", message.upper())
+        plain_words  = re.findall(r"[A-Z_]+", plaintext.upper())
+
+        # If alignment ever breaks return best
+        if len(cipher_words) != len(plain_words):
+            return plaintext
+
+        # Build solved maps (cipher->plain and plain->cipher) from current map
+        solved_c2p = {}
+        solved_p2c = {}
+        for c in LETTERS:
+            if len(letterMapping[c]) == 1:
+                p = letterMapping[c][0]
+                solved_c2p[c] = p
+                solved_p2c[p] = c
+
+        # For each word with blanks find dictionary candidates that fit
+        for cw, pw in zip(cipher_words, plain_words):
+            if "_" not in pw:
+                continue  # already fully solved word
+            if len(cw) != len(pw):
+                continue
+
+            # Regex pattern from partially-decrypted word
+            pat = "^" + pw.replace("_", ".") + "$"
+
+            # Pre-filter by length first (fast)
+            candidates = [w for w in dict_words if len(w) == len(pw)]
+            candidates = [w for w in candidates if re.match(pat, w) is not None]
+
+            if not candidates:
+                continue
+
+            # Filter candidates by respecting current one-to-one solved constraints
+            filtered = []
+            for cand in candidates:
+                ok = True
+                for i in range(len(cw)):
+                    c = cw[i]
+                    p = cand[i]
+
+                    # if cipher letter already solved, it must match
+                    if c in solved_c2p and solved_c2p[c] != p:
+                        ok = False
+                        break
+
+                    # if plaintext letter already assigned to a different cipher, reject
+                    if p in solved_p2c and solved_p2c[p] != c:
+                        ok = False
+                        break
+
+                if ok:
+                    filtered.append(cand)
+
+            if not filtered:
+                continue
+
+            # If exactly one candidate, we can force all letters for this word
+            if len(filtered) == 1:
+                cand = filtered[0]
+                for i in range(len(cw)):
+                    c = cw[i]
+                    p = cand[i]
+                    if len(letterMapping[c]) != 1:
+                        # lock it
+                        letterMapping[c] = [p]
+                        changed = True
+                # propagate solved letters (removes solved letters from other lists)
+                letterMapping = ssh.removeSolvedLettersFromMapping(letterMapping)
+
+                # refresh solved maps for later checks this round
+                solved_c2p = {}
+                solved_p2c = {}
+                for c2 in LETTERS:
+                    if len(letterMapping[c2]) == 1:
+                        p2 = letterMapping[c2][0]
+                        solved_c2p[c2] = p2
+                        solved_p2c[p2] = c2
+
+            else:
+                # Multiple candidates: intersect possibilities position-wise.
+                # If for some cipherletter, all candidates agree on the plaintext letter, lock it.
+                for i in range(len(cw)):
+                    c = cw[i]
+                    if len(letterMapping[c]) == 1:
+                        continue
+                    letters_here = set(cand[i] for cand in filtered)
+                    if len(letters_here) == 1:
+                        p = next(iter(letters_here))
+                        letterMapping[c] = [p]
+                        changed = True
+                if changed:
+                    letterMapping = ssh.removeSolvedLettersFromMapping(letterMapping)
+
+        # End for each word
+
+        # If solved fully, stop early
+        plaintext = ssh.decryptWithCipherletterMapping(message, letterMapping)
+        if "_" not in plaintext:
+            return plaintext
+
+    # Return best
+    return plaintext
 
 
 def test():
